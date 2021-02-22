@@ -7,87 +7,76 @@ from decouple import config
 import os
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=config("GOOGLE_APPLICATION_CREDENTIALS")
 
-def async_detect_document(gcs_source_uri, gcs_destination_uri):
-    # Supported mime_types are: 'application/pdf' and 'image/tiff'
-    mime_type = 'application/pdf'
+class Script:
+    def async_detect_document(gcs_source_uri, gcs_destination_uri):
+        mime_type = 'application/pdf'
 
-    # How many pages should be grouped into each json output file.
-    batch_size = 100
+        batch_size = 100
 
-    client = vision.ImageAnnotatorClient()
+        client = vision.ImageAnnotatorClient()
 
-    feature = vision.Feature(
-        type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION)
+        feature = vision.Feature(
+            type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION)
 
-    gcs_source = vision.GcsSource(uri=gcs_source_uri)
-    input_config = vision.InputConfig(
-        gcs_source=gcs_source, mime_type=mime_type)
+        gcs_source = vision.GcsSource(uri=gcs_source_uri)
+        input_config = vision.InputConfig(
+            gcs_source=gcs_source, mime_type=mime_type)
 
-    gcs_destination = vision.GcsDestination(uri=gcs_destination_uri)
-    output_config = vision.OutputConfig(
-        gcs_destination=gcs_destination, batch_size=batch_size)
+        gcs_destination = vision.GcsDestination(uri=gcs_destination_uri)
+        output_config = vision.OutputConfig(
+            gcs_destination=gcs_destination, batch_size=batch_size)
 
-    async_request = vision.AsyncAnnotateFileRequest(
-        features=[feature], input_config=input_config,
-        output_config=output_config)
+        async_request = vision.AsyncAnnotateFileRequest(
+            features=[feature], input_config=input_config,
+            output_config=output_config)
 
-    operation = client.async_batch_annotate_files(
-        requests=[async_request])
+        operation = client.async_batch_annotate_files(
+            requests=[async_request])
 
-    print('Waiting for the operation to finish.')
-    operation.result(timeout=420)
+        print('Waiting for the operation to finish.')
+        operation.result(timeout=420)
 
-def write_to_text(gcs_destination_uri):
-    # Once the request has completed and the output has been
-    # written to GCS, we can list all the output files.
-    storage_client = storage.Client()
+    def write_to_text(gcs_destination_uri, local_file_name):
+        storage_client = storage.Client()
 
-    match = re.match(r'gs://([^/]+)/(.+)', gcs_destination_uri)
-    bucket_name = match.group(1)
-    prefix = match.group(2)
+        match = re.match(r'gs://([^/]+)/(.+)', gcs_destination_uri)
+        bucket_name = match.group(1)
+        prefix = match.group(2)
 
-    bucket = storage_client.get_bucket(bucket_name)
+        bucket = storage_client.get_bucket(bucket_name)
 
-    # List objects with the given prefix.
-    blob_list = list(bucket.list_blobs(prefix=prefix))
-    print('Output files:')
+        blob_list = list(bucket.list_blobs(prefix=prefix))
 
-    transcription = open("transcription.txt", "w")
+        open(f"results/{local_file_name[:-4]}.txt", "w")
 
-    for blob in blob_list:
-        print(blob.name)
+        for blob in blob_list:
+            print("")
+            print(blob.name)
+            print("")
 
-    # Process the first output file from GCS.
-    # Since we specified batch_size=2, the first response contains
-    # the first two pages of the input file.
-    for blob in blob_list:
-        output = blob
+        for blob in blob_list:
+            output = blob
 
-        json_string = output.download_as_string()
-        response = json.loads(json_string)
-        # print(response['responses'][0]['fullTextAnnotation']['text'])
-        with open("response.json", "w", encoding="utf-8") as f:
-            json.dump(response['responses'][0]['fullTextAnnotation'], f)
+            json_string = output.download_as_string()
+            response = json.loads(json_string)
 
-        # The actual response for the first page of the input file.
-        for m in range(len(response['responses'])):
+            page = 1
+            print("so, we meet again")
+            for page_response in response['responses']:
 
-            first_page_response = response['responses'][m]
+                first_page_response = page_response
 
-            try:
-                annotation = first_page_response['fullTextAnnotation']
-            except(KeyError):
-                print("No annotation for this page.")
+                try:
+                    annotation = first_page_response['fullTextAnnotation']
+                except(KeyError):
+                    print("No annotation found in this page.")
 
-            # Here we print the full text from the first page.
-            # The response contains more information:
-            # annotation/pages/blocks/paragraphs/words/symbols
-            # including confidence scores and bounding boxes
-            print('Full text:\n')
-            print(annotation['text'])
-            
-            with open("transcription.txt", "a+", encoding="utf-8") as f:
-                f.write(annotation['text'])
+                print(f"Page {page}\n \n")
+                print(annotation['text'])
+                print("\n\n")
 
-# async_detect_document("gs://pdf_bucketeer/PDF test.pdf", "gs://pdf_bucketeer/pdf-result")
-write_to_text("gs://pdf_bucketeer/pdf-result")
+                with open(f"results/{local_file_name[:-4]}.txt", "a+", encoding="utf-8") as f:
+                    f.write(f"Page {page}\n \n")
+                    f.write(annotation['text'])
+                    f.write("\n\n")
+                    page += 1

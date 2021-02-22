@@ -5,6 +5,8 @@
 /env
 .env
 .DS_STORE
+/__pycache__
 
 # resulting files
 transcription.txt
+/results/*
