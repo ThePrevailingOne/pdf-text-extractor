@@ -1,0 +1,10 @@
+# private credentials
+/credentials
+
+# private environment
+/env
+.env
+.DS_STORE
+
+# resulting files
+transcription.txt
